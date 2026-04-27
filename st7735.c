@@ -29,15 +29,24 @@ static void spi_byte(uint8_t b)
     (void)spi_i2s_data_receive(SPI0);
 }
 
+/* Init-sequence helpers — CS toggles per byte, fine for slow cmds */
 static void lcd_cmd(uint8_t c)  { dc_lo(); cs_lo(); spi_byte(c); cs_hi(); }
 static void lcd_dat(uint8_t d)  { dc_hi(); cs_lo(); spi_byte(d); cs_hi(); }
 
-static void lcd_dat16(uint16_t c)
+/* --- Drawing helper: CASET + RASET + RAMWR in ONE CS transaction.
+       CS is driven LOW on entry and stays LOW on exit.
+       Caller must raise CS after sending pixel data.            --- */
+static void write_window_raw(uint16_t xs, uint16_t xe,
+                             uint16_t ys, uint16_t ye)
 {
-    dc_hi(); cs_lo();
-    spi_byte(c >> 8);
-    spi_byte(c & 0xFF);
-    cs_hi();
+    cs_lo();
+    dc_lo(); spi_byte(0x2A); dc_hi();          /* CASET */
+    spi_byte(xs >> 8); spi_byte(xs & 0xFF);
+    spi_byte(xe >> 8); spi_byte(xe & 0xFF);
+    dc_lo(); spi_byte(0x2B); dc_hi();          /* RASET */
+    spi_byte(ys >> 8); spi_byte(ys & 0xFF);
+    spi_byte(ye >> 8); spi_byte(ye & 0xFF);
+    dc_lo(); spi_byte(0x2C); dc_hi();          /* RAMWR — DC stays HI for pixels */
 }
 
 /* ------------------------------------------------------------------ */
@@ -138,6 +147,17 @@ void LCD_Init(void)
     lcd_dat(0x00); lcd_dat(0x00); lcd_dat(0x02); lcd_dat(0x10);
 
     lcd_cmd(0x13); delay_ms(10);    /* Normal display  */
+
+    /* --- Wipe entire controller RAM (162 x 132) before display-on.
+           This eliminates border artifacts from uninitialised memory
+           at addresses outside our CASET/RASET window.            --- */
+    write_window_raw(0, 161, 0, 131);
+    {
+        uint32_t n = 162u * 132u;
+        while (n--) { spi_byte(0); spi_byte(0); }
+    }
+    cs_hi();
+
     lcd_cmd(0x29); delay_ms(100);   /* Display on      */
 
     LCD_Backlight(1);
@@ -153,29 +173,24 @@ void LCD_Backlight(uint8_t on)
 /*  Drawing primitives                                                  */
 /* ------------------------------------------------------------------ */
 
+/* Public SetWindow — used externally; CS is raised on return */
 void LCD_SetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
-    uint16_t xs = x0 + LCD_X_OFFSET;
-    uint16_t xe = x1 + LCD_X_OFFSET;
-    uint16_t ys = y0 + LCD_Y_OFFSET;
-    uint16_t ye = y1 + LCD_Y_OFFSET;
-
-    lcd_cmd(0x2A);
-    lcd_dat(xs >> 8); lcd_dat(xs & 0xFF);
-    lcd_dat(xe >> 8); lcd_dat(xe & 0xFF);
-    lcd_cmd(0x2B);
-    lcd_dat(ys >> 8); lcd_dat(ys & 0xFF);
-    lcd_dat(ye >> 8); lcd_dat(ye & 0xFF);
-    lcd_cmd(0x2C);
+    write_window_raw(x0 + LCD_X_OFFSET, x1 + LCD_X_OFFSET,
+                     y0 + LCD_Y_OFFSET, y1 + LCD_Y_OFFSET);
+    cs_hi();
 }
 
+/* FillRect: window setup + pixel burst in a SINGLE CS transaction */
 void LCD_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color)
 {
+    uint8_t  hi, lo;
+    uint32_t n;
     if (!w || !h) return;
-    LCD_SetWindow(x, y, x + w - 1, y + h - 1);
-    uint8_t hi = color >> 8, lo = color & 0xFF;
-    dc_hi(); cs_lo();
-    uint32_t n = (uint32_t)w * h;
+    write_window_raw(x + LCD_X_OFFSET,       x + w - 1 + LCD_X_OFFSET,
+                     y + LCD_Y_OFFSET,       y + h - 1 + LCD_Y_OFFSET);
+    hi = color >> 8; lo = color & 0xFF;
+    n  = (uint32_t)w * h;
     while (n--) { spi_byte(hi); spi_byte(lo); }
     cs_hi();
 }
@@ -185,8 +200,10 @@ void LCD_FillScreen(uint16_t color) { LCD_FillRect(0, 0, LCD_W, LCD_H, color); }
 void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
     if (x >= LCD_W || y >= LCD_H) return;
-    LCD_SetWindow(x, y, x, y);
-    lcd_dat16(color);
+    write_window_raw(x + LCD_X_OFFSET, x + LCD_X_OFFSET,
+                     y + LCD_Y_OFFSET, y + LCD_Y_OFFSET);
+    spi_byte(color >> 8); spi_byte(color & 0xFF);
+    cs_hi();
 }
 
 /* Clip-safe fill: accepts int16_t, clips to screen */
