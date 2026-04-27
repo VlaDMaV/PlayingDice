@@ -96,6 +96,7 @@ static uint8_t  btn2_long_fired = 0;
 /* Animation state */
 static int16_t  ax1, ax2;            /* current x-centers             */
 static int16_t  prev_ax1, prev_ax2;  /* previous x-centers (for erase) */
+static int16_t  g_anim_start1, g_anim_target1; /* die 1 fly-in params */
 static uint8_t  af1, af2;            /* displayed faces               */
 static uint32_t a_spin_ms   = 0;     /* last face-change timestamp    */
 static uint8_t  a_fi1, a_fi2;        /* index into spin sequence      */
@@ -288,39 +289,53 @@ static void generate_dice(void)
     }
 }
 
-/* Erase the bounding box of one die (with 1-px margin) at center cx,cy */
-static void erase_die_box(int16_t cx, int16_t cy)
+/* Clear a clipped rectangle with signed coords */
+static void clear_rect(int16_t x, int16_t y, int16_t w, int16_t h)
 {
-    int16_t x = cx - (DIE_SIZE / 2 + 1);
-    int16_t y = cy - (DIE_SIZE / 2 + 1);
-    int16_t w = DIE_SIZE + 2;
-    int16_t h = DIE_SIZE + 2;
-
-    /* Clip to content area */
-    if (x < 0)        { w += x; x = 0; }
-    if (y < BAR_H)    { h -= (BAR_H - y); y = BAR_H; }
+    if (x < 0)     { w += x; x = 0; }
+    if (y < BAR_H) { h -= (BAR_H - y); y = BAR_H; }
     if (w <= 0 || h <= 0) return;
     if (x >= LCD_W || y >= LCD_H) return;
     if (x + w > LCD_W) w = LCD_W - x;
     if (y + h > LCD_H) h = LCD_H - y;
-
     LCD_FillRect((uint16_t)x, (uint16_t)y, (uint16_t)w, (uint16_t)h, COLOR_BLACK);
 }
 
 static void anim_render(void)
 {
-    /* Erase ONLY the previous die bounding boxes — no full-screen clear.
-       This eliminates the black flash that caused flickering.           */
-    erase_die_box(prev_ax1, DIE_Y_C);
-    if (g_dice_count == 2)
-        erase_die_box(prev_ax2, DIE_Y_C);
+    /* OVERDRAW strategy — no full bounding-box erase.
+       We draw the new die directly on top of the old one.
+       The die body (solid fill) covers the old face's dots automatically.
+       We only erase the thin strip the die left behind while moving.    */
 
-    /* Draw dice at new positions */
+    int16_t half = DIE_SIZE / 2 + 1;   /* 18 px */
+    int16_t dy_top  = DIE_Y_C - half;
+    int16_t dy_h    = DIE_SIZE + 2;
+
+    /* --- Trailing strip for die 1 --- */
+    if (ax1 > prev_ax1) {
+        /* moved right: clear strip to the left of old die */
+        clear_rect(prev_ax1 - half, dy_top, ax1 - prev_ax1, dy_h);
+    } else if (ax1 < prev_ax1) {
+        /* moved left: clear strip to the right of old die */
+        clear_rect(ax1 + half, dy_top, prev_ax1 - ax1, dy_h);
+    }
+    /* ax1 == prev_ax1 (spinning in place): nothing to clear */
+
+    /* --- Trailing strip for die 2 --- */
+    if (g_dice_count == 2) {
+        if (ax2 > prev_ax2) {
+            clear_rect(prev_ax2 - half, dy_top, ax2 - prev_ax2, dy_h);
+        } else if (ax2 < prev_ax2) {
+            clear_rect(ax2 + half, dy_top, prev_ax2 - ax2, dy_h);
+        }
+    }
+
+    /* Overdraw dice at new positions */
     draw_die(ax1, DIE_Y_C, af1, COLOR_WHITE,  COLOR_RED);
     if (g_dice_count == 2)
         draw_die(ax2, DIE_Y_C, af2, COLOR_DKGRAY, COLOR_WHITE);
 
-    /* Remember current positions for next frame's erase */
     prev_ax1 = ax1;
     prev_ax2 = ax2;
 }
@@ -332,8 +347,18 @@ static void anim_render(void)
 static void start_anim(void)
 {
     generate_dice();
-    ax1 = DIE1_X_START;   prev_ax1 = DIE1_X_START;
-    ax2 = DIE2_X_START;   prev_ax2 = DIE2_X_START;
+
+    /* 1-die mode: fly in from a random side, land at screen centre */
+    if (g_dice_count == 1) {
+        g_anim_start1  = (rng_next() & 1u) ? (int16_t)DIE1_X_START
+                                             : (int16_t)DIE2_X_START;
+        g_anim_target1 = (int16_t)(LCD_W / 2);
+    } else {
+        g_anim_start1  = (int16_t)DIE1_X_START;
+        g_anim_target1 = (int16_t)DIE1_X_C;
+    }
+    ax1 = g_anim_start1;   prev_ax1 = g_anim_start1;
+    ax2 = DIE2_X_START;    prev_ax2 = DIE2_X_START;
     a_fi1 = 0; a_fi2 = 3;
     af1 = k_spin_seq[0];
     af2 = k_spin_seq[3];
@@ -511,8 +536,8 @@ int main(void)
 
             /* Position ease-out over 3000 ms */
             uint32_t t256 = (elapsed < 3000u) ? (elapsed * 256u / 3000u) : 256u;
-            ax1 = ease_out(DIE1_X_START, DIE1_X_C, t256);
-            ax2 = ease_out(DIE2_X_START, DIE2_X_C, t256);
+            ax1 = ease_out(g_anim_start1, g_anim_target1, t256);
+            ax2 = ease_out(DIE2_X_START,  DIE2_X_C,       t256);
 
             /* Face spin — slows down, then locks */
             if (elapsed < 3200u) {
