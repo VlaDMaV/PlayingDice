@@ -312,22 +312,26 @@ static void anim_render(void)
     int16_t dy_top  = DIE_Y_C - half;
     int16_t dy_h    = DIE_SIZE + 2;
 
-    /* --- Trailing strip for die 1 --- */
+    /* --- Trailing strip for die 1.
+       Width += (DIE_RADIUS+1) so the rounded cap ghost pixels (old cap rows
+       are narrower than center band, so new body misses them) are also cleared.
+       For leftward movement the strip start shifts left by the same amount.   */
     if (ax1 > prev_ax1) {
-        /* moved right: clear strip to the left of old die */
-        clear_rect(prev_ax1 - half, dy_top, ax1 - prev_ax1, dy_h);
+        clear_rect(prev_ax1 - half, dy_top,
+                   ax1 - prev_ax1 + DIE_RADIUS + 1, dy_h);
     } else if (ax1 < prev_ax1) {
-        /* moved left: clear strip to the right of old die */
-        clear_rect(ax1 + half, dy_top, prev_ax1 - ax1, dy_h);
+        clear_rect(ax1 + half - DIE_RADIUS - 1, dy_top,
+                   prev_ax1 - ax1 + DIE_RADIUS + 1, dy_h);
     }
-    /* ax1 == prev_ax1 (spinning in place): nothing to clear */
 
     /* --- Trailing strip for die 2 --- */
     if (g_dice_count == 2) {
         if (ax2 > prev_ax2) {
-            clear_rect(prev_ax2 - half, dy_top, ax2 - prev_ax2, dy_h);
+            clear_rect(prev_ax2 - half, dy_top,
+                       ax2 - prev_ax2 + DIE_RADIUS + 1, dy_h);
         } else if (ax2 < prev_ax2) {
-            clear_rect(ax2 + half, dy_top, prev_ax2 - ax2, dy_h);
+            clear_rect(ax2 + half - DIE_RADIUS - 1, dy_top,
+                       prev_ax2 - ax2 + DIE_RADIUS + 1, dy_h);
         }
     }
 
