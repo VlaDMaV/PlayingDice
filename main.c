@@ -287,6 +287,17 @@ static void generate_dice(void)
     }
 }
 
+static void anim_render(void)
+{
+    /* Clear content area below status bar */
+    LCD_FillRect(0, BAR_H, LCD_W, LCD_H - BAR_H, COLOR_BLACK);
+
+    draw_die(ax1, DIE_Y_C, af1, COLOR_WHITE,  COLOR_RED);
+
+    if (g_dice_count == 2)
+        draw_die(ax2, DIE_Y_C, af2, COLOR_DKGRAY, COLOR_WHITE);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Animation start                                                     */
 /* ------------------------------------------------------------------ */
@@ -327,16 +338,6 @@ static int16_t ease_out(int16_t start, int16_t target, uint32_t t256)
                      ((int32_t)(start - target) * (int32_t)factor >> 8));
 }
 
-static void anim_render(void)
-{
-    /* Clear content area below status bar */
-    LCD_FillRect(0, BAR_H, LCD_W, LCD_H - BAR_H, COLOR_BLACK);
-
-    draw_die(ax1, DIE_Y_C, af1, COLOR_WHITE,  COLOR_RED);
-
-    if (g_dice_count == 2)
-        draw_die(ax2, DIE_Y_C, af2, COLOR_DKGRAY, COLOR_WHITE);
-}
 
 /* ------------------------------------------------------------------ */
 /*  Sleep / wakeup                                                      */
