@@ -95,6 +95,7 @@ static uint8_t  btn2_long_fired = 0;
 
 /* Animation state */
 static int16_t  ax1, ax2;            /* current x-centers             */
+static int16_t  prev_ax1, prev_ax2;  /* previous x-centers (for erase) */
 static uint8_t  af1, af2;            /* displayed faces               */
 static uint32_t a_spin_ms   = 0;     /* last face-change timestamp    */
 static uint8_t  a_fi1, a_fi2;        /* index into spin sequence      */
@@ -287,15 +288,41 @@ static void generate_dice(void)
     }
 }
 
+/* Erase the bounding box of one die (with 1-px margin) at center cx,cy */
+static void erase_die_box(int16_t cx, int16_t cy)
+{
+    int16_t x = cx - (DIE_SIZE / 2 + 1);
+    int16_t y = cy - (DIE_SIZE / 2 + 1);
+    int16_t w = DIE_SIZE + 2;
+    int16_t h = DIE_SIZE + 2;
+
+    /* Clip to content area */
+    if (x < 0)        { w += x; x = 0; }
+    if (y < BAR_H)    { h -= (BAR_H - y); y = BAR_H; }
+    if (w <= 0 || h <= 0) return;
+    if (x >= LCD_W || y >= LCD_H) return;
+    if (x + w > LCD_W) w = LCD_W - x;
+    if (y + h > LCD_H) h = LCD_H - y;
+
+    LCD_FillRect((uint16_t)x, (uint16_t)y, (uint16_t)w, (uint16_t)h, COLOR_BLACK);
+}
+
 static void anim_render(void)
 {
-    /* Clear content area below status bar */
-    LCD_FillRect(0, BAR_H, LCD_W, LCD_H - BAR_H, COLOR_BLACK);
+    /* Erase ONLY the previous die bounding boxes — no full-screen clear.
+       This eliminates the black flash that caused flickering.           */
+    erase_die_box(prev_ax1, DIE_Y_C);
+    if (g_dice_count == 2)
+        erase_die_box(prev_ax2, DIE_Y_C);
 
+    /* Draw dice at new positions */
     draw_die(ax1, DIE_Y_C, af1, COLOR_WHITE,  COLOR_RED);
-
     if (g_dice_count == 2)
         draw_die(ax2, DIE_Y_C, af2, COLOR_DKGRAY, COLOR_WHITE);
+
+    /* Remember current positions for next frame's erase */
+    prev_ax1 = ax1;
+    prev_ax2 = ax2;
 }
 
 /* ------------------------------------------------------------------ */
@@ -305,17 +332,20 @@ static void anim_render(void)
 static void start_anim(void)
 {
     generate_dice();
-    ax1 = DIE1_X_START;
-    ax2 = DIE2_X_START;
+    ax1 = DIE1_X_START;   prev_ax1 = DIE1_X_START;
+    ax2 = DIE2_X_START;   prev_ax2 = DIE2_X_START;
     a_fi1 = 0; a_fi2 = 3;
     af1 = k_spin_seq[0];
     af2 = k_spin_seq[3];
     a_spin_ms   = msTicks;
     g_anim_lock = 1;
 
+    /* One full clear to set a clean background, then draw first frame */
     LCD_FillScreen(COLOR_BLACK);
     draw_status_bar();
-    anim_render();
+    draw_die(ax1, DIE_Y_C, af1, COLOR_WHITE,  COLOR_RED);
+    if (g_dice_count == 2)
+        draw_die(ax2, DIE_Y_C, af2, COLOR_DKGRAY, COLOR_WHITE);
 
     g_state    = S_ANIM;
     g_state_ms = msTicks;
