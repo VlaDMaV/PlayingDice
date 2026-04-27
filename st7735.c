@@ -109,19 +109,19 @@ void LCD_Init(void)
     lcd_cmd(0xC4); lcd_dat(0x8A); lcd_dat(0xEE);
     lcd_cmd(0xC5); lcd_dat(0x0E); /* VCOM */
 
-    lcd_cmd(0x36); lcd_dat(0x60);   /* MADCTL landscape: MX|MV */
+    lcd_cmd(0x36); lcd_dat(0x68);   /* MADCTL landscape: MX|MV|BGR */
 
     lcd_cmd(0x3A); lcd_dat(0x05);   /* 16-bit colour RGB565 */
 
-    /* Column address: 0..159 (with typical 0-offset for this panel) */
+    /* CASET x: 1..160  (offset 1) */
     lcd_cmd(0x2A);
-    lcd_dat(0x00); lcd_dat(0x00);
-    lcd_dat(0x00); lcd_dat(0x9F);
+    lcd_dat(0x00); lcd_dat(0x00 + LCD_X_OFFSET);
+    lcd_dat(0x00); lcd_dat(0x9F + LCD_X_OFFSET);
 
-    /* Row address: 0..79 */
+    /* RASET y: 26..105 (offset 26) */
     lcd_cmd(0x2B);
-    lcd_dat(0x00); lcd_dat(0x00);
-    lcd_dat(0x00); lcd_dat(0x4F);
+    lcd_dat(0x00); lcd_dat(0x00 + LCD_Y_OFFSET);
+    lcd_dat(0x00); lcd_dat(0x4F + LCD_Y_OFFSET);
 
     /* Gamma positive */
     lcd_cmd(0xE0);
@@ -155,12 +155,17 @@ void LCD_Backlight(uint8_t on)
 
 void LCD_SetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
+    uint16_t xs = x0 + LCD_X_OFFSET;
+    uint16_t xe = x1 + LCD_X_OFFSET;
+    uint16_t ys = y0 + LCD_Y_OFFSET;
+    uint16_t ye = y1 + LCD_Y_OFFSET;
+
     lcd_cmd(0x2A);
-    lcd_dat(x0 >> 8); lcd_dat(x0 & 0xFF);
-    lcd_dat(x1 >> 8); lcd_dat(x1 & 0xFF);
+    lcd_dat(xs >> 8); lcd_dat(xs & 0xFF);
+    lcd_dat(xe >> 8); lcd_dat(xe & 0xFF);
     lcd_cmd(0x2B);
-    lcd_dat(y0 >> 8); lcd_dat(y0 & 0xFF);
-    lcd_dat(y1 >> 8); lcd_dat(y1 & 0xFF);
+    lcd_dat(ys >> 8); lcd_dat(ys & 0xFF);
+    lcd_dat(ye >> 8); lcd_dat(ye & 0xFF);
     lcd_cmd(0x2C);
 }
 

@@ -7,6 +7,13 @@
 #define LCD_W  160
 #define LCD_H   80
 
+/* Address offsets for 80x160 ST7735S in landscape (MADCTL 0x68).
+   Portrait baseline: cols 26..105, rows 1..160.
+   In landscape (MV=1): CASET gets x+1, RASET gets y+26.
+   If picture is still shifted, try LCD_X_OFFSET=0, LCD_Y_OFFSET=0. */
+#define LCD_X_OFFSET  1
+#define LCD_Y_OFFSET 26
+
 /* ---- Pin mapping — adjust to your board ---- */
 /* SPI0: PA5=SCK(SCL), PA7=MOSI(SDA)           */
 #define LCD_CS_PORT   GPIOA

@@ -77,14 +77,15 @@ static uint8_t rng_dice(uint8_t max_val)
 
 typedef enum { S_IDLE, S_SPLASH, S_ANIM, S_RESULT } AppState;
 
-static AppState  g_state      = S_IDLE;
-static uint32_t  g_state_ms   = 0;
-static uint8_t   g_max8       = 0;   /* "no more than 8" mode         */
-static uint8_t   g_dice_count = 2;   /* 1 or 2 dice                   */
-static uint8_t   g_die1_val   = 1;
-static uint8_t   g_die2_val   = 1;
-static uint8_t   g_anim_lock  = 0;   /* 1 while animation runs        */
-static uint32_t  g_idle_ms    = 0;   /* timestamp of last activity in RESULT */
+static AppState  g_state       = S_IDLE;
+static uint32_t  g_state_ms    = 0;
+static uint8_t   g_max8        = 0;   /* "no more than 8" mode         */
+static uint8_t   g_dice_count  = 2;   /* 1 or 2 dice                   */
+static uint8_t   g_die1_val    = 1;
+static uint8_t   g_die2_val    = 1;
+static uint8_t   g_anim_lock   = 0;   /* 1 while animation runs        */
+static uint32_t  g_idle_ms     = 0;   /* timestamp of last activity in RESULT */
+static uint8_t   g_splash_auto = 0;   /* 1 = go to ANIM right after splash  */
 
 /* Button tracking */
 static uint8_t  btn1_last       = 1;
@@ -287,6 +288,29 @@ static void generate_dice(void)
 }
 
 /* ------------------------------------------------------------------ */
+/*  Animation start                                                     */
+/* ------------------------------------------------------------------ */
+
+static void start_anim(void)
+{
+    generate_dice();
+    ax1 = DIE1_X_START;
+    ax2 = DIE2_X_START;
+    a_fi1 = 0; a_fi2 = 3;
+    af1 = k_spin_seq[0];
+    af2 = k_spin_seq[3];
+    a_spin_ms   = msTicks;
+    g_anim_lock = 1;
+
+    LCD_FillScreen(COLOR_BLACK);
+    draw_status_bar();
+    anim_render();
+
+    g_state    = S_ANIM;
+    g_state_ms = msTicks;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Animation helpers                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -320,14 +344,11 @@ static void anim_render(void)
 
 static volatile uint8_t g_wakeup = 0;
 
+/* Only BTN1 (PC13) wakes the system */
 void EXTI10_15_IRQHandler(void)
 {
     if (exti_interrupt_flag_get(EXTI_13)) {
         exti_interrupt_flag_clear(EXTI_13);
-        g_wakeup = 1;
-    }
-    if (exti_interrupt_flag_get(EXTI_14)) {
-        exti_interrupt_flag_clear(EXTI_14);
         g_wakeup = 1;
     }
 }
@@ -337,14 +358,11 @@ static void system_sleep(void)
     LCD_Backlight(0);
     LCD_FillScreen(COLOR_BLACK);
 
-    /* Configure EXTI on PC13, PC14 (falling edge = button press) */
+    /* EXTI on BTN1 (PC13) only — falling edge */
     rcu_periph_clock_enable(RCU_AF);
     gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOC, GPIO_PIN_SOURCE_13);
-    gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOC, GPIO_PIN_SOURCE_14);
     exti_interrupt_flag_clear(EXTI_13);
-    exti_interrupt_flag_clear(EXTI_14);
     exti_init(EXTI_13, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
-    exti_init(EXTI_14, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
     nvic_irq_enable(EXTI10_15_IRQn, 2, 0);
 
     g_wakeup = 0;
@@ -353,17 +371,17 @@ static void system_sleep(void)
     nvic_irq_disable(EXTI10_15_IRQn);
     exti_deinit();
 
-    /* Resume */
+    /* Resume: show splash, then auto-start animation */
     LCD_Backlight(1);
-    g_anim_lock = 0;
-    g_state     = S_IDLE;
-    g_state_ms  = msTicks;
-    btn1_last   = 1;
-    btn2_last   = 1;
+    g_anim_lock    = 0;
+    btn1_last      = 1;
+    btn2_last      = 1;
+    g_splash_auto  = 1;   /* after splash → auto-start ANIM */
 
-    LCD_FillScreen(COLOR_BLACK);
-    draw_status_bar();
-    delay_ms(250);   /* debounce after wakeup */
+    delay_ms(80);         /* debounce: wait for button to settle */
+    show_splash();
+    g_state    = S_SPLASH;
+    g_state_ms = msTicks;
 }
 
 /* ------------------------------------------------------------------ */
@@ -395,13 +413,10 @@ static void handle_buttons(void)
         draw_status_bar();
     }
 
-    /* ---------- BTN1: start roll ---------- */
+    /* ---------- BTN1: start roll (direct to animation, no splash) ---- */
     if (!btn1 && btn1_last && !g_anim_lock) {
-        if (g_state == S_IDLE || g_state == S_RESULT) {
-            show_splash();
-            g_state    = S_SPLASH;
-            g_state_ms = msTicks;
-        }
+        if (g_state == S_IDLE || g_state == S_RESULT)
+            start_anim();
     }
 
     /* Any button resets the 20-second idle counter in RESULT */
@@ -425,11 +440,13 @@ int main(void)
 
     rcu_periph_clock_enable(RCU_PMU);
     LCD_Init();
-    LCD_FillScreen(COLOR_BLACK);
-    draw_status_bar();
 
-    g_state    = S_IDLE;
-    g_state_ms = msTicks;
+    /* Boot splash — after it expires, go to IDLE (wait for BTN1) */
+    draw_status_bar();
+    show_splash();
+    g_splash_auto = 0;
+    g_state       = S_SPLASH;
+    g_state_ms    = msTicks;
 
     while (1) {
         handle_buttons();
@@ -440,26 +457,20 @@ int main(void)
         case S_IDLE:
             break;
 
-        /* ---- SPLASH: "by Xelor" shown for 1 second ------------ */
+        /* ---- SPLASH: "by Xelor" for 1 s ----------------------- */
         case S_SPLASH:
             if ((msTicks - g_state_ms) >= 1000u) {
-                generate_dice();
-
-                /* Prepare animation */
-                ax1  = DIE1_X_START;
-                ax2  = DIE2_X_START;
-                a_fi1 = 0; a_fi2 = 3;
-                af1  = k_spin_seq[0];
-                af2  = k_spin_seq[3];
-                a_spin_ms = msTicks;
-                g_anim_lock = 1;
-
-                LCD_FillScreen(COLOR_BLACK);
-                draw_status_bar();
-                anim_render();
-
-                g_state    = S_ANIM;
-                g_state_ms = msTicks;
+                if (g_splash_auto) {
+                    /* After sleep: go straight to animation */
+                    g_splash_auto = 0;
+                    start_anim();
+                } else {
+                    /* After boot: wait for BTN1 */
+                    LCD_FillScreen(COLOR_BLACK);
+                    draw_status_bar();
+                    g_state    = S_IDLE;
+                    g_state_ms = msTicks;
+                }
             }
             break;
 
@@ -520,6 +531,8 @@ int main(void)
             break;
         }
 
-        delay_ms(30);   /* ~33 fps */
+        /* Yield only in non-animated states; animation is SPI-limited */
+        if (g_state != S_ANIM)
+            delay_ms(10);
     }
 }
