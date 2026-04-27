@@ -541,11 +541,8 @@ int main(void)
             if (elapsed >= 3500u) {
                 g_anim_lock = 0;
 
-                /* Draw final static scene */
-                LCD_FillRect(0, BAR_H, LCD_W, LCD_H - BAR_H, COLOR_BLACK);
-                draw_die(DIE1_X_C, DIE_Y_C, g_die1_val, COLOR_WHITE,  COLOR_RED);
-                if (g_dice_count == 2)
-                    draw_die(DIE2_X_C, DIE_Y_C, g_die2_val, COLOR_DKGRAY, COLOR_WHITE);
+                /* Dice are already drawn at correct positions by the last
+                   anim_render() call — just overlay the score row.      */
                 draw_score();
 
                 g_state    = S_RESULT;
