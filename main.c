@@ -407,8 +407,8 @@ static volatile uint8_t g_wakeup = 0;
 /* Only BTN1 (PC13) wakes the system */
 void EXTI10_15_IRQHandler(void)
 {
-    if (exti_interrupt_flag_get(EXTI_13)) {
-        exti_interrupt_flag_clear(EXTI_13);
+    if (exti_interrupt_flag_get(EXTI_12)) {
+        exti_interrupt_flag_clear(EXTI_12);
         g_wakeup = 1;
     }
 }
@@ -418,11 +418,11 @@ static void system_sleep(void)
     LCD_Backlight(0);
     LCD_FillScreen(COLOR_BLACK);
 
-    /* EXTI on BTN1 (PC13) only — falling edge */
+    /* EXTI on BTN1 (PC12) only — falling edge */
     rcu_periph_clock_enable(RCU_AF);
-    gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOC, GPIO_PIN_SOURCE_13);
-    exti_interrupt_flag_clear(EXTI_13);
-    exti_init(EXTI_13, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
+    gpio_exti_source_select(GPIO_PORT_SOURCE_GPIOB, GPIO_PIN_SOURCE_12);
+    exti_interrupt_flag_clear(EXTI_12);
+    exti_init(EXTI_12, EXTI_INTERRUPT, EXTI_TRIG_FALLING);
     nvic_irq_enable(EXTI10_15_IRQn, 2, 0);
 
     g_wakeup = 0;

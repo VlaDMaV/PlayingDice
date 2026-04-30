@@ -26,10 +26,10 @@
 #define LCD_BLK_PIN   GPIO_PIN_10
 
 /* Button pins — active LOW, internal pull-up */
-#define BTN1_PORT     GPIOC
-#define BTN1_PIN      GPIO_PIN_13
-#define BTN2_PORT     GPIOC
-#define BTN2_PIN      GPIO_PIN_14
+#define BTN1_PORT     GPIOB
+#define BTN1_PIN      GPIO_PIN_12
+#define BTN2_PORT     GPIOA
+#define BTN2_PIN      GPIO_PIN_9
 
 /* RGB565 colours */
 #define COLOR_BLACK   0x0000u
